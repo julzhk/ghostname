@@ -8,8 +8,8 @@ def list_names(request):
     if request.method == 'POST':
         form = UserNameForm(request.POST)
         if form.is_valid():
-            Username.objects.create(firstname='alfred',
-                                    lastname='anyname'
+            Username.objects.create(firstname=form.cleaned_data['firstname'],
+                                    lastname=form.cleaned_data['lastname']
                                     )
     else:
         form = UserNameForm()

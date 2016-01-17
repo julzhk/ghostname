@@ -50,3 +50,6 @@ class SimpleTestHomePage(TestCase):
         self.assertIn(firstname, response.content.decode())
         self.assertIn(lastname, response.content.decode())
         self.assertEqual(Username.objects.all().count(), 1)
+        created_user = Username.objects.all()[0]
+        self.assertEqual(created_user.firstname, firstname)
+        self.assertEqual(created_user.lastname, lastname)
