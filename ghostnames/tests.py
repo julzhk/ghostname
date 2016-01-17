@@ -1,8 +1,16 @@
 from django.test import TestCase, Client
+from django.core.urlresolvers import resolve
+from ghostnames.views import list_names
+
+
 class SimpleTestHomePage(TestCase):
 
     def setUp(self):
         self.client = Client()
+
+    def test_root_url_resolves_to_home_page_view(self):
+            found = resolve('/ghostnames/')
+            self.assertEqual(found.func, list_names)
 
     def test_homepage(self):
         response = self.client.get('/')

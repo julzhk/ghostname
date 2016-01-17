@@ -10,7 +10,7 @@ def list_names(request):
             pass
             # Process the data in form.cleaned_data
     else:
-        form = UserNameForm() # An unbound form
+        form = UserNameForm()
 
     return render(request, 'ghostnames/index.html', {
         'form': form,
