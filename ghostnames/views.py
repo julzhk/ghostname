@@ -2,13 +2,15 @@ from django.http import HttpResponse
 from django.shortcuts import render
 
 from ghostnames.forms import UserNameForm
+from ghostnames.models import Username
 
 def list_names(request):
     if request.method == 'POST':
         form = UserNameForm(request.POST)
         if form.is_valid():
-            pass
-            # Process the data in form.cleaned_data
+            Username.objects.create(firstname='alfred',
+                                    lastname='anyname'
+                                    )
     else:
         form = UserNameForm()
 

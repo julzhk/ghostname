@@ -2,6 +2,7 @@ from django.test import TestCase, Client
 from django.core.urlresolvers import resolve
 from django.http import HttpRequest
 from ghostnames.views import list_names
+from ghostnames.models import Username
 
 
 class SimpleTestHomePage(TestCase):
@@ -36,3 +37,16 @@ class SimpleTestHomePage(TestCase):
                                     )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(len(response.context['ghostnames']),3)
+
+    def test_home_page_can_save_a_POST_request(self):
+        self.assertEqual(Username.objects.all().count(),0)
+        request = HttpRequest()
+        request.method = 'POST'
+        firstname = 'Andy'
+        lastname = 'Alpha'
+        request.POST['firstname'] = firstname
+        request.POST['lastname'] = lastname
+        response = list_names(request)
+        self.assertIn(firstname, response.content.decode())
+        self.assertIn(lastname, response.content.decode())
+        self.assertEqual(Username.objects.all().count(), 1)
