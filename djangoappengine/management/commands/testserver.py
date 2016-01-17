@@ -1,73 +1,64 @@
-#!/usr/bin/python2.4
-#
-# Copyright 2008 Google Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#         http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-
-import os
-import sys
-
-from .runserver import start_dev_appserver
 from django.core.management.base import BaseCommand
-from djangoappengine.db.base import destroy_datastore, get_test_datastore_paths
 
+from djangoappengine.management.commands.runserver import Command as RunServerCommand
+
+from google.appengine.api import apiproxy_stub_map
+from google.appengine.datastore import datastore_stub_util
+
+from optparse import make_option
 
 class Command(BaseCommand):
-    """Overrides the default Django testserver command.
+    option_list = RunServerCommand.option_list + (
+        make_option('--noinput', action='store_false', dest='interactive', default=True,
+            help='Tells Django to NOT prompt the user for input of any kind.'),
+        make_option('--addrport', action='store', dest='addrport',
+            type='string', default='',
+            help='port number or ipaddr:port to run the server on'),
+        make_option('--ipv6', '-6', action='store_true', dest='use_ipv6', default=False,
+            help='Tells Django to use a IPv6 address.'),
+    )
+    help = 'Runs a development server with data from the given fixture(s).'
+    args = '[fixture ...]'
 
-    Instead of starting the default Django development server this command fires
-    up a copy of the full fledged App Engine dev_appserver.
+    requires_model_validation = False
 
-    The appserver is always initialised with a blank datastore with the specified
-    fixtures loaded into it.
-    """
-    help = 'Runs the development server with data from the given fixtures.'
-
-    def run_from_argv(self, argv):
-        fixtures = []
-        for arg in argv[2:]:
-            if arg.startswith('-'):
-                break
-            fixtures.append(arg)
-            argv.remove(arg)
-
-        try:
-            index = argv.index('--addrport')
-            addrport = argv[index + 1]
-            del argv[index:index+2]
-            argv = argv[:2] + [addrport] + argv[2:index] + argv[index+1:]
-        except:
-            pass
-
-        # Ensure an on-disk test datastore is used.
-        from django.db import connection
-        connection.use_test_datastore = True
-        connection.test_datastore_inmemory = False
-
-        # Flush any existing test datastore.
-        connection.flush()
-
-        # Load the fixtures.
+    def handle(self, *fixture_labels, **options):
         from django.core.management import call_command
-        call_command('loaddata', 'initial_data')
-        if fixtures:
-            call_command('loaddata', *fixtures)
+        from django import db
+        from ...db.base import get_datastore_paths, destroy_datastore, DatabaseWrapper
+        from ...db.stubs import stub_manager
 
-        # Build new arguments for dev_appserver.
-        argv[1] = 'runserver'
-        datastore_path, history_path = get_test_datastore_paths(False)
-        argv.extend(['--datastore_path', datastore_path])
-        argv.extend(['--history_path', history_path])
+        verbosity = int(options.get('verbosity'))
 
-        start_dev_appserver(argv)
+        db_name = None
+
+        for name in db.connections:
+            conn = db.connections[name]
+            if isinstance(conn, DatabaseWrapper):
+                settings = conn.settings_dict
+                for key, path in get_datastore_paths(settings).items():
+                    settings[key] = "%s-testdb" % path
+                destroy_datastore(get_datastore_paths(settings))
+
+                stub_manager.reset_stubs(conn, datastore_path=settings['datastore_path'])
+
+                db_name = name
+                break
+
+        # Temporarily change consistency policy to force apply loaded data
+        datastore = apiproxy_stub_map.apiproxy.GetStub('datastore_v3')
+
+        orig_consistency_policy = datastore._consistency_policy
+        datastore.SetConsistencyPolicy(datastore_stub_util.PseudoRandomHRConsistencyPolicy(probability=1))
+
+        # Import the fixture data into the test database.
+        call_command('loaddata', *fixture_labels, **{'verbosity': verbosity})
+
+        # reset original policy
+        datastore.SetConsistencyPolicy(orig_consistency_policy)
+
+        # Run the development server. Turn off auto-reloading because it causes
+        # a strange error -- it causes this handle() method to be called
+        # multiple times.
+        shutdown_message = '\nServer stopped.\nNote that the test database, %r, has not been deleted. You can explore it on your own.' % db_name
+        call_command('runserver', shutdown_message=shutdown_message, use_reloader=False, **options)

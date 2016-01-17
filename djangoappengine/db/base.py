@@ -1,120 +1,289 @@
-from ..utils import appid, have_appserver, on_production_server
-from .creation import DatabaseCreation
-from django.db.backends.util import format_number
-from djangotoolbox.db.base import NonrelDatabaseFeatures, \
-    NonrelDatabaseOperations, NonrelDatabaseWrapper, NonrelDatabaseClient, \
-    NonrelDatabaseValidation, NonrelDatabaseIntrospection
-from urllib2 import HTTPError, URLError
+import datetime
+import decimal
 import logging
 import os
-import time
+import shutil
 
-REMOTE_API_SCRIPT = '$PYTHON_LIB/google/appengine/ext/remote_api/handler.py'
+from django.db.utils import DatabaseError
 
-def auth_func():
-    import getpass
-    return raw_input('Login via Google Account: '), getpass.getpass('Password: ')
+from google.appengine.api.datastore import Delete, Query
+from google.appengine.api.datastore_errors import BadArgumentError, \
+    BadValueError
+from google.appengine.api.datastore_types import Blob, Key, Text, \
+    ValidateInteger
+from google.appengine.api.namespace_manager import set_namespace
+from google.appengine.ext.db.metadata import get_kinds, get_namespaces
 
-def rpc_server_factory(*args, ** kwargs):
-    from google.appengine.tools import appengine_rpc
-    kwargs['save_cookies'] = True
-    return appengine_rpc.HttpRpcServer(*args, ** kwargs)
+from djangotoolbox.db.base import (
+    NonrelDatabaseClient,
+    NonrelDatabaseFeatures,
+    NonrelDatabaseIntrospection,
+    NonrelDatabaseOperations,
+    NonrelDatabaseValidation,
+    NonrelDatabaseWrapper)
+from djangotoolbox.db.utils import decimal_to_string
+
+from ..boot import DATA_ROOT
+from ..utils import appid, on_production_server
+from .creation import DatabaseCreation
+from .stubs import stub_manager
+
+
+DATASTORE_PATHS = {
+    'datastore_path': os.path.join(DATA_ROOT, 'datastore'),
+    'blobstore_path': os.path.join(DATA_ROOT, 'blobstore'),
+    #'rdbms_sqlite_path': os.path.join(DATA_ROOT, 'rdbms'),
+    'prospective_search_path': os.path.join(DATA_ROOT, 'prospective-search'),
+}
+
+
+def key_from_path(db_table, value):
+    """
+    Workaround for GAE choosing not to validate integer ids when
+    creating keys.
+
+    TODO: Should be removed if it gets fixed.
+    """
+    if isinstance(value, (int, long)):
+        ValidateInteger(value, 'id')
+    return Key.from_path(db_table, value)
+
 
 def get_datastore_paths(options):
-    """Returns a tuple with the path to the datastore and history file.
+    paths = {}
+    for key, path in DATASTORE_PATHS.items():
+        paths[key] = options.get(key, path)
+    return paths
 
-    The datastore is stored in the same location as dev_appserver uses by
-    default, but the name is altered to be unique to this project so multiple
-    Django projects can be developed on the same machine in parallel.
 
-    Returns:
-      (datastore_path, history_path)
-    """
-    from google.appengine.tools import dev_appserver_main
-    datastore_path = options.get('datastore_path',
-                                 dev_appserver_main.DEFAULT_ARGS['datastore_path'].replace(
-                                 'dev_appserver', 'django_%s' % appid))
-    blobstore_path = options.get('blobstore_path',
-                                 dev_appserver_main.DEFAULT_ARGS['blobstore_path'].replace(
-                                 'dev_appserver', 'django_%s' % appid))
-    history_path = options.get('history_path',
-                               dev_appserver_main.DEFAULT_ARGS['history_path'].replace(
-                               'dev_appserver', 'django_%s' % appid))
-    return datastore_path, blobstore_path, history_path
-
-def get_test_datastore_paths(inmemory=True):
-    """Returns a tuple with the path to the test datastore and history file.
-
-    If inmemory is true, (None, None) is returned to request an in-memory
-    datastore. If inmemory is false the path returned will be similar to the path
-    returned by get_datastore_paths but with a different name.
-
-    Returns:
-      (datastore_path, history_path)
-    """
-    if inmemory:
-        return None, None, None
-    datastore_path, blobstore_path, history_path = get_datastore_paths()
-    datastore_path = datastore_path.replace('.datastore', '.testdatastore')
-    blobstore_path = blobstore_path.replace('.blobstore', '.testblobstore')
-    history_path = history_path.replace('.datastore', '.testdatastore')
-    return datastore_path, blobstore_path, history_path
-
-def destroy_datastore(*args):
+def destroy_datastore(paths):
     """Destroys the appengine datastore at the specified paths."""
-    for path in args:
+    for path in paths.values():
         if not path:
             continue
         try:
-            os.remove(path)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
         except OSError, error:
             if error.errno != 2:
                 logging.error("Failed to clear datastore: %s" % error)
 
+
 class DatabaseFeatures(NonrelDatabaseFeatures):
-    allows_primary_key_0 = True
-    supports_dicts = True
+
+    # GAE only allow strictly positive integers (and strings) to be
+    # used as key values.
+    allows_primary_key_0 = False
+
+    # Anything that results in a something different than a positive
+    # integer or a string cannot be directly used as a key on GAE.
+    # Note that DecimalField values are encoded as strings, so can be
+    # used as keys.
+    # With some encoding, we could allow most fields to be used as a
+    # primary key, but for now only mark what can and what cannot be
+    # safely used.
+    supports_primary_key_on = \
+        NonrelDatabaseFeatures.supports_primary_key_on - set((
+        'FloatField', 'DateField', 'DateTimeField', 'TimeField',
+        'BooleanField', 'NullBooleanField', 'TextField', 'XMLField'))
+
 
 class DatabaseOperations(NonrelDatabaseOperations):
     compiler_module = __name__.rsplit('.', 1)[0] + '.compiler'
 
-    DEFAULT_MAX_DIGITS = 16
-    def value_to_db_decimal(self, value, max_digits, decimal_places):
-        if value is None: 
-            return None
-        sign = value < 0 and u'-' or u''
-        if sign: 
-            value = abs(value)
-        if max_digits is None: 
-            max_digits = self.DEFAULT_MAX_DIGITS
+    # Date used to store times as datetimes.
+    # TODO: Use just date()?
+    DEFAULT_DATE = datetime.date(1970, 1, 1)
 
-        if decimal_places is None:
-            value = unicode(value)
-        else:
-            value = format_number(value, max_digits, decimal_places)
-        decimal_places = decimal_places or 0
-        n = value.find('.')
+    # Time used to store dates as datetimes.
+    DEFAULT_TIME = datetime.time()
 
-        if n < 0:
-            n = len(value)
-        if n < max_digits - decimal_places:
-            value = u"0" * (max_digits - decimal_places - n) + value
-        return sign + value
-
-    def sql_flush(self, style, tables, sequences):
+    def sql_flush(self, style, tables, sequences, allow_cascade=False):
         self.connection.flush()
         return []
+
+    def value_to_db_auto(self, value):
+        """
+        New keys generated by the GAE datastore hold longs.
+        """
+        if value is None:
+            return None
+        return long(value)
+
+    def value_for_db(self, value, field, lookup=None):
+        """
+        We'll simulate `startswith` lookups with two inequalities:
+
+            property >= value and property <= value + u'\ufffd',
+
+        and need to "double" the value before passing it through the
+        actual datastore conversions.
+        """
+        super_value_for_db = super(DatabaseOperations, self).value_for_db
+        if lookup == 'startswith':
+            return [super_value_for_db(value, field, lookup),
+                    super_value_for_db(value + u'\ufffd', field, lookup)]
+        return super_value_for_db(value, field, lookup)
+
+    def _value_for_db(self, value, field, field_kind, db_type, lookup):
+        """
+        GAE database may store a restricted set of Python types, for
+        some cases it has its own types like Key, Text or Blob.
+
+        TODO: Consider moving empty list handling here (from insert).
+        """
+
+        # Store Nones as Nones to handle nullable fields, even keys.
+        if value is None:
+            return None
+
+        # Parent can handle iterable fields and Django wrappers.
+        value = super(DatabaseOperations, self)._value_for_db(
+            value, field, field_kind, db_type, lookup)
+
+        # Convert decimals to strings preserving order.
+        if field_kind == 'DecimalField':
+            value = decimal_to_string(
+                value, field.max_digits, field.decimal_places)
+
+        # Create GAE db.Keys from Django keys.
+        # We use model's table name as key kind (the table of the model
+        # of the instance that the key identifies, for ForeignKeys and
+        # other relations).
+        if db_type == 'key':
+#            value = self._value_for_db_key(value, field_kind)
+            try:
+                value = key_from_path(field.model._meta.db_table, value)
+            except (BadArgumentError, BadValueError,):
+                raise DatabaseError("Only strings and positive integers "
+                                    "may be used as keys on GAE. Received %r." % value)
+
+        # Store all strings as unicode, use db.Text for longer content.
+        elif db_type == 'string' or db_type == 'text':
+            if isinstance(value, str):
+                value = value.decode('utf-8')
+            if db_type == 'text':
+                value = Text(value)
+
+        # Store all date / time values as datetimes, by using some
+        # default time or date.
+        elif db_type == 'date':
+            value = datetime.datetime.combine(value, self.DEFAULT_TIME)
+        elif db_type == 'time':
+            value = datetime.datetime.combine(self.DEFAULT_DATE, value)
+
+        # Store BlobField, DictField and EmbeddedModelField values as Blobs.
+        elif db_type == 'bytes':
+            value = Blob(value)
+
+        return value
+
+    def _value_from_db(self, value, field, field_kind, db_type):
+        """
+        Undoes conversions done in value_for_db.
+        """
+
+        # We could have stored None for a null field.
+        if value is None:
+            return None
+
+        # All keys were converted to the Key class.
+        if db_type == 'key':
+            assert isinstance(value, Key), \
+                "GAE db.Key expected! Try changing to old storage, " \
+                "dumping data, changing to new storage and reloading."
+            assert value.parent() is None, "Parents are not yet supported!"
+            value = value.id_or_name()
+#            value = self._value_from_db_key(value, field_kind)
+
+        # Always retrieve strings as unicode (old datasets may
+        # contain non-unicode strings).
+        elif db_type == 'string' or db_type == 'text':
+            if isinstance(value, str):
+                value = value.decode('utf-8')
+            else:
+                value = unicode(value)
+
+        # Dates and times are stored as datetimes, drop the added part.
+        elif db_type == 'date':
+            value = value.date()
+        elif db_type == 'time':
+            value = value.time()
+
+        # Convert GAE Blobs to plain strings for Django.
+        elif db_type == 'bytes':
+            value = str(value)
+
+        # Revert the decimal-to-string encoding.
+        if field_kind == 'DecimalField':
+            value = decimal.Decimal(value)
+
+        return super(DatabaseOperations, self)._value_from_db(
+            value, field, field_kind, db_type)
+
+#    def _value_for_db_key(self, value, field_kind):
+#        """
+#        Converts values to be used as entity keys to strings,
+#        trying (but not fully succeeding) to preserve comparisons.
+#        """
+
+#        # Bools as positive integers.
+#        if field_kind == 'BooleanField':
+#            value = int(value) + 1
+
+#        # Encode floats as strings.
+#        elif field_kind == 'FloatField':
+#            value = self.value_to_db_decimal(
+#                decimal.Decimal(value), None, None)
+
+#        # Integers as strings (string keys sort after int keys, so
+#        # all need to be encoded to preserve comparisons).
+#        elif field_kind in ('IntegerField', 'BigIntegerField',
+#           'PositiveIntegerField', 'PositiveSmallIntegerField',
+#           'SmallIntegerField'):
+#            value = self.value_to_db_decimal(
+#                decimal.Decimal(value), None, 0)
+
+#        return value
+
+#    def value_from_db_key(self, value, field_kind):
+#        """
+#        Decodes value previously encoded in a key.
+#        """
+#        if field_kind == 'BooleanField':
+#            value = bool(value - 1)
+#        elif field_kind == 'FloatField':
+#            value = float(value)
+#        elif field_kind in ('IntegerField', 'BigIntegerField',
+#           'PositiveIntegerField', 'PositiveSmallIntegerField',
+#           'SmallIntegerField'):
+#            value = int(value)
+
+#        return value
+
 
 class DatabaseClient(NonrelDatabaseClient):
     pass
 
+
 class DatabaseValidation(NonrelDatabaseValidation):
     pass
 
+
 class DatabaseIntrospection(NonrelDatabaseIntrospection):
-    pass
+
+    def table_names(self, cursor=None):
+        """
+        Returns a list of names of all tables that exist in the
+        database.
+        """
+        return [kind.key().name() for kind in Query(kind='__kind__').Run()]
+
 
 class DatabaseWrapper(NonrelDatabaseWrapper):
+
     def __init__(self, *args, **kwds):
         super(DatabaseWrapper, self).__init__(*args, **kwds)
         self.features = DatabaseFeatures(self)
@@ -124,108 +293,66 @@ class DatabaseWrapper(NonrelDatabaseWrapper):
         self.validation = DatabaseValidation(self)
         self.introspection = DatabaseIntrospection(self)
         options = self.settings_dict
-        self.use_test_datastore = False
-        self.test_datastore_inmemory = True
-        self.remote = options.get('REMOTE', False)
-        if on_production_server:
-            self.remote = False
         self.remote_app_id = options.get('REMOTE_APP_ID', appid)
+        self.domain = options.get('DOMAIN', 'appspot.com')
         self.remote_api_path = options.get('REMOTE_API_PATH', None)
         self.secure_remote_api = options.get('SECURE_REMOTE_API', True)
-        self._setup_stubs()
 
-    def _get_paths(self):
-        if self.use_test_datastore:
-            return get_test_datastore_paths(self.test_datastore_inmemory)
+        remote = options.get('REMOTE', False)
+        if on_production_server:
+            remote = False
+        if remote:
+            stub_manager.setup_remote_stubs(self)
         else:
-            return get_datastore_paths(self.settings_dict)
-
-    def _setup_stubs(self):
-        # If this code is being run without an appserver (eg. via a django
-        # commandline flag) then setup a default stub environment.
-        if not have_appserver:
-            from google.appengine.tools import dev_appserver_main
-            args = dev_appserver_main.DEFAULT_ARGS.copy()
-            args['datastore_path'], args['blobstore_path'], args['history_path'] = self._get_paths()
-            from google.appengine.tools import dev_appserver
-            dev_appserver.SetupStubs(appid, **args)
-        # If we're supposed to set up the remote_api, do that now.
-        if self.remote:
-            self.setup_remote()
-
-    def setup_remote(self):
-        if not self.remote_api_path:
-            from ..utils import appconfig
-            for handler in appconfig.handlers:
-                if handler.script == REMOTE_API_SCRIPT:
-                    self.remote_api_path = handler.url
-                    break
-        self.remote = True
-        remote_url = 'https://%s.appspot.com%s' % (self.remote_app_id,
-                                                   self.remote_api_path)
-        logging.info('Setting up remote_api for "%s" at %s' %
-                     (self.remote_app_id, remote_url))
-        if not have_appserver:
-            print 'Connecting to remote_api handler'
-        from google.appengine.ext.remote_api import remote_api_stub
-        remote_api_stub.ConfigureRemoteApi(self.remote_app_id,
-            self.remote_api_path, auth_func, secure=self.secure_remote_api,
-            rpc_server_factory=rpc_server_factory)
-        retry_delay = 1
-        while retry_delay <= 16:
-            try:
-                remote_api_stub.MaybeInvokeAuthentication()
-            except HTTPError, e:
-                if not have_appserver:
-                    print 'Retrying in %d seconds...' % retry_delay
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                break
-        else:
-            try:
-                remote_api_stub.MaybeInvokeAuthentication()
-            except HTTPError, e:
-                raise URLError("%s\n"
-                               "Couldn't reach remote_api handler at %s.\n"
-                               "Make sure you've deployed your project and "
-                               "installed a remote_api handler in app.yaml."
-                               % (e, remote_url))
-        logging.info('Now using the remote datastore for "%s" at %s' %
-                     (self.remote_app_id, remote_url))
+            stub_manager.setup_stubs(self)
 
     def flush(self):
-        """Helper function to remove the current datastore and re-open the stubs"""
-        if self.remote:
-            import random, string
-            code = ''.join([random.choice(string.ascii_letters) for x in range(4)])
-            print '\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-            print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        """
+        Helper function to remove the current datastore and re-open the
+        stubs.
+        """
+        if stub_manager.active_stubs == 'remote':
+            import random
+            import string
+            code = ''.join([random.choice(string.ascii_letters)
+                            for x in range(4)])
+            print "\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
             print "Warning! You're about to delete the *production* datastore!"
-            print 'Only models defined in your INSTALLED_APPS can be removed!'
-            print 'If you want to clear the whole datastore you have to use the ' \
-                  'datastore viewer in the dashboard. Also, in order to delete all '\
-                  'unneeded indexes you have to run appcfg.py vacuum_indexes.'
-            print 'In order to proceed you have to enter the following code:'
+            print "Only models defined in your INSTALLED_APPS can be removed!"
+            print "If you want to clear the whole datastore you have to use " \
+                  "the datastore viewer in the dashboard. Also, in order to " \
+                  "delete all unneeded indexes you have to run appcfg.py " \
+                  "vacuum_indexes."
+            print "In order to proceed you have to enter the following code:"
             print code
-            response = raw_input('Repeat: ')
+            response = raw_input("Repeat: ")
             if code == response:
-                print 'Deleting...'
-                from django.db import models
-                from google.appengine.api import datastore as ds
-                for model in models.get_models():
-                    print 'Deleting %s...' % model._meta.db_table
-                    while True:
-                        data = ds.Query(model._meta.db_table, keys_only=True).Get(200)
-                        if not data:
-                            break
-                        ds.Delete(data)
+                print "Deleting..."
+                delete_all_entities()
                 print "Datastore flushed! Please check your dashboard's " \
-                      'datastore viewer for any remaining entities and remove ' \
-                      'all unneeded indexes with manage.py vacuum_indexes.'
+                      "datastore viewer for any remaining entities and " \
+                      "remove all unneeded indexes with appcfg.py " \
+                      "vacuum_indexes."
             else:
-                print 'Aborting'
+                print "Aborting."
                 exit()
+        elif stub_manager.active_stubs == 'test':
+            stub_manager.deactivate_test_stubs()
+            stub_manager.activate_test_stubs(self)
         else:
-            destroy_datastore(*self._get_paths())
-        self._setup_stubs()
+            destroy_datastore(get_datastore_paths(self.settings_dict))
+            stub_manager.reset_stubs(self)
+
+
+def delete_all_entities():
+    for namespace in get_namespaces():
+        set_namespace(namespace)
+        for kind in get_kinds():
+            if kind.startswith('__'):
+                continue
+            while True:
+                data = Query(kind=kind, keys_only=True).Get(200)
+                if not data:
+                    break
+                Delete(data)
