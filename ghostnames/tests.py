@@ -1,6 +1,7 @@
 from django.test import TestCase, Client
 from django.core.urlresolvers import resolve
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponseRedirect
+from django.core.urlresolvers import reverse
 from ghostnames.views import list_names
 from ghostnames.models import Username
 
@@ -35,8 +36,7 @@ class SimpleTestHomePage(TestCase):
         response = self.client.post('/ghostnames/', {'firstname': 'john',
                                                      'lastname': 'smith'}
                                     )
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(len(response.context['ghostnames']),3)
+        self.assertEqual(response.status_code, 302)
 
     def test_home_page_can_save_a_POST_request(self):
         self.assertEqual(Username.objects.all().count(),0)
@@ -47,15 +47,12 @@ class SimpleTestHomePage(TestCase):
         request.POST['firstname'] = firstname
         request.POST['lastname'] = lastname
         response = list_names(request)
-        self.assertIn(firstname, response.content.decode())
-        self.assertIn(lastname, response.content.decode())
         self.assertEqual(Username.objects.all().count(), 1)
         created_user = Username.objects.all()[0]
         self.assertEqual(created_user.firstname, firstname)
         self.assertEqual(created_user.lastname, lastname)
 
     def test_home_page_saved_POST_request_now_in_context(self):
-        self.assertEqual(Username.objects.all().count(),0)
         request = HttpRequest()
         request.method = 'POST'
         firstname = 'Andy'
@@ -66,3 +63,12 @@ class SimpleTestHomePage(TestCase):
         response = self.client.get('/ghostnames/')
         self.assertTrue(any(i.given_name == 'Andy Alpha' for i in response.context['ghostnames']))
 
+    def test_home_page_saved_POST_now_choose_a_ghost_name(self):
+        response = self.client.post('/ghostnames/',
+                                    {'firstname': 'brian',
+                                     'lastname': 'beta'}
+                                    )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(reverse('choose',current_app='ghostnames') in response['Location'])
+
+        
