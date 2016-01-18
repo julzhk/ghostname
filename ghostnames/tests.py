@@ -69,6 +69,9 @@ class SimpleTestHomePage(TestCase):
                                      'lastname': 'beta'}
                                     )
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(reverse('choose',current_app='ghostnames') in response['Location'])
+        self.assertTrue('choose' in response['Location'])
 
-        
+        response = self.client.get(response['Location'])
+        self.assertTrue('brian' in response.content)
+        self.assertTrue('beta' in response.content)
+

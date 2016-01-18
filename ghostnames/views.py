@@ -9,21 +9,22 @@ def list_names(request):
     if request.method == 'POST':
         form = UserNameForm(request.POST)
         if form.is_valid():
-            Username.objects.create(firstname=form.cleaned_data['firstname'],
+            newuser = Username.objects.create(firstname=form.cleaned_data['firstname'],
                                     lastname=form.cleaned_data['lastname']
                                     )
-            return HttpResponseRedirect(reverse('choose',current_app='ghostnames'))
+            return HttpResponseRedirect(reverse('choose',current_app='ghostnames', args=[newuser.id,]))
     else:
         form = UserNameForm()
-
     return render(request, 'ghostnames/index.html', {
         'form': form,
         'ghostnames':Username.objects.all()
     })
 
-def choose_ghost_name(request):
+def choose_ghost_name(request, uid=None):
+    user = Username.objects.get(id=uid) if uid else None
     form = ChooseGhostNameForm()
-    return render(request, 'ghostnames/index.html', {
+    return render(request, 'ghostnames/choosename.html', {
         'form': form,
-        'ghostnames':Username.objects.all()
+        'ghostnames':Username.objects.all(),
+        'user':user
     })
