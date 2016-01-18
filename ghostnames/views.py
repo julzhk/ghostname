@@ -16,5 +16,5 @@ def list_names(request):
 
     return render(request, 'ghostnames/index.html', {
         'form': form,
-        'ghostnames':[1,2,3]
+        'ghostnames':Username.objects.all()
     })

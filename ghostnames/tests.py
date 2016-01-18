@@ -53,3 +53,16 @@ class SimpleTestHomePage(TestCase):
         created_user = Username.objects.all()[0]
         self.assertEqual(created_user.firstname, firstname)
         self.assertEqual(created_user.lastname, lastname)
+
+    def test_home_page_saved_POST_request_now_in_context(self):
+        self.assertEqual(Username.objects.all().count(),0)
+        request = HttpRequest()
+        request.method = 'POST'
+        firstname = 'Andy'
+        lastname = 'Alpha'
+        request.POST['firstname'] = firstname
+        request.POST['lastname'] = lastname
+        list_names(request)
+        response = self.client.get('/ghostnames/')
+        self.assertTrue(any(i.given_name == 'Andy Alpha' for i in response.context['ghostnames']))
+
