@@ -96,5 +96,11 @@ class SimpleTestHomePage(TestCase):
 
     def test_initialize(self):
         Ghost.initialize()
-        all_ghosts_count = g = Ghost.objects.count()
+        all_ghosts_count = Ghost.objects.count()
+        self.assertTrue(all_ghosts_count == 43)
+
+    def test_initialize_only_runs_once(self):
+        Ghost.initialize()
+        Ghost.initialize()
+        all_ghosts_count = Ghost.objects.count()
         self.assertTrue(all_ghosts_count == 43)

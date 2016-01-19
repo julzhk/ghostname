@@ -16,10 +16,12 @@ class Ghost(models.Model):
     @classmethod
     def initialize(self, filepath= os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                                 'initial_data/initial_data.txt')):
-        with open(filepath) as f:
-            for ghostname in f:
-                Ghost.objects.create(name=ghostname,
-                                     taken='available')
+        if Ghost.objects.count() == 0:
+            with open(filepath) as f:
+                for ghostname in f:
+                    Ghost.objects.create(name=ghostname,
+                                         taken='available')
+
 
 
 
