@@ -1,3 +1,4 @@
+import os
 from django.db import models
 from ghostnames.utils import tuplify_list
 
@@ -11,6 +12,14 @@ class Ghost(models.Model):
 
     def __unicode__(self):
         return self.name
+
+    @classmethod
+    def initialize(self, filepath= os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                'initial_data/initial_data.txt')):
+        with open(filepath) as f:
+            for ghostname in f:
+                Ghost.objects.create(name=ghostname,
+                                     taken='available')
 
 
 

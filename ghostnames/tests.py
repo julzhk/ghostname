@@ -94,3 +94,7 @@ class SimpleTestHomePage(TestCase):
         for name in ghostnames[:3]:
             self.assertTrue(name in next_ghosts_names)
 
+    def test_initialize(self):
+        Ghost.initialize()
+        all_ghosts_count = g = Ghost.objects.count()
+        self.assertTrue(all_ghosts_count == 43)
