@@ -1,5 +1,15 @@
 from django.db import models
 
+class Ghost(models.Model):
+    name = models.CharField(max_length=255)
+    class Meta:
+        ordering = ['id']
+
+    def __unicode__(self):
+        return self.name
+
+
+
 class Username(models.Model):
     firstname = models.CharField(max_length=255)
     lastname = models.CharField(max_length=255)

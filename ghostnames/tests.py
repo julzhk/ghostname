@@ -3,8 +3,8 @@ from django.core.urlresolvers import resolve
 from django.http import HttpRequest, HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from ghostnames.views import list_names
-from ghostnames.models import Username
-
+from ghostnames.models import Username, Ghost
+from ghostnames.forms import available_ghosts
 
 class SimpleTestHomePage(TestCase):
 
@@ -74,4 +74,23 @@ class SimpleTestHomePage(TestCase):
         response = self.client.get(response['Location'])
         self.assertTrue('brian' in response.content)
         self.assertTrue('beta' in response.content)
+
+    def test_get_available_ghost_names_when_all_are_available(self):
+        ghostnames = ['Betelgeuse','Bhoot','Bloody Mary','Bogle']
+        for name in ghostnames:
+            Ghost.objects.create(name=name)
+        next_ghosts = available_ghosts(3)
+        next_ghosts_names = [n.name for n in next_ghosts]
+        for name in ghostnames[:3]:
+            self.assertTrue(name in next_ghosts_names)
+
+    def test_get_available_ghost_names_when_some_are_taken(self):
+        ghostnames = ['Betelgeuse','Bhoot','Bloody Mary','Bogle']
+        for i, name in enumerate(ghostnames):
+            taken = 'available' if i<2 else 'taken'
+            g = Ghost.objects.create(name=name, taken=taken)
+        next_ghosts = available_ghosts(3)
+        next_ghosts_names = [n.name for n in next_ghosts]
+        for name in ghostnames[:3]:
+            self.assertTrue(name in next_ghosts_names)
 
