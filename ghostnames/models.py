@@ -1,7 +1,11 @@
 from django.db import models
+from ghostnames.utils import tuplify_list
+
+GHOST_NAME_AVAILABILITY = tuplify_list(['taken','available'])
 
 class Ghost(models.Model):
     name = models.CharField(max_length=255)
+    taken = models.CharField(max_length=32, choices=GHOST_NAME_AVAILABILITY)
     class Meta:
         ordering = ['id']
 
