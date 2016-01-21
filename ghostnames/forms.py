@@ -12,4 +12,7 @@ def available_ghosts(sample=3):
     return Ghost.objects.all()[:sample]
 
 class ChooseGhostNameForm(forms.Form):
-    ghost_name = forms.ChoiceField(choices=tuplify_list([g.name for g in available_ghosts()]))
+    def __init__(self, *args, **kwargs):
+        super(ChooseGhostNameForm, self).__init__(*args, **kwargs)
+        self.fields['ghost_name'] = forms.ChoiceField(
+            choices=tuplify_list(available_ghosts()))

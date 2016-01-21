@@ -1,6 +1,7 @@
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render, redirect
 from django.core.urlresolvers import reverse
+from django.core.cache import cache
 
 from ghostnames.forms import UserNameForm, ChooseGhostNameForm
 from ghostnames.models import Username
@@ -13,7 +14,9 @@ def list_names(request):
             newuser = Username.objects.create(firstname=form.cleaned_data['firstname'],
                                     lastname=form.cleaned_data['lastname']
                                     )
-            return HttpResponseRedirect(reverse('choose',current_app='ghostnames', args=[newuser.id,]))
+            return HttpResponseRedirect(reverse('choose',
+                                                current_app='ghostnames',
+                                                args=[newuser.id,]))
     else:
         form = UserNameForm()
     return render(request, 'ghostnames/index.html', {
@@ -23,6 +26,7 @@ def list_names(request):
 
 def choose_ghost_name(request, uid=None):
     user = Username.objects.get(id=uid) if uid else None
+    template_name = 'ghostnames/choosename.html'
     if request.method == 'POST':
         form = ChooseGhostNameForm(request.POST)
         if form.is_valid():
@@ -31,9 +35,10 @@ def choose_ghost_name(request, uid=None):
             ghost = Ghost.objects.get(name = form.cleaned_data['ghost_name'])
             ghost.taken = 'taken'
             ghost.save()
+            template_name = 'ghostnames/confirmname.html'
     else:
         form = ChooseGhostNameForm()
-    return render(request, 'ghostnames/choosename.html', {
+    return render(request, template_name, {
         'form': form,
         'ghostnames':Username.objects.all(),
         'user':user

@@ -4,6 +4,6 @@ from django.conf.urls import url
 
 
 urlpatterns = patterns('ghostnames.views',
-    url(r'^choose/(?P<uid>\d+)/$', choose_ghost_name, name='choose'),
+    url(r'^choose/(?P<uid>\d+)', choose_ghost_name, name='choose'),
     (r'^$', 'list_names'),
 )

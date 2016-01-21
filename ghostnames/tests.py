@@ -1,5 +1,6 @@
 from django.test import TestCase, Client
 from django.core.urlresolvers import resolve
+from django.core.cache import cache
 from django.http import HttpRequest, HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from ghostnames.views import list_names
@@ -27,6 +28,11 @@ class SimpleTestHomePage(TestCase):
         self.assertEqual(response.status_code, 301)
         response = self.client.get('/ghostnames/')
         self.assertEqual(response.status_code, 200)
+
+class SimpleSubmitName(TestCase):
+
+    def setUp(self):
+        self.client = Client()
 
     def test_submit_name_to_create_ghost_name(self):
         """
@@ -75,6 +81,11 @@ class SimpleTestHomePage(TestCase):
         self.assertTrue('brian' in response.content)
         self.assertTrue('beta' in response.content)
 
+class GhostNameAssignmentTests(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+
     def test_get_available_ghost_names_when_all_are_available(self):
         ghostnames = ['Betelgeuse','Bhoot','Bloody Mary','Bogle']
         for name in ghostnames:
@@ -113,21 +124,17 @@ class SimpleTestHomePage(TestCase):
 
     def test_select_ghost_name_is_saved(self):
         Ghost.initialize()
-        self.client.post('/ghostnames/',
-                                    {'firstname': 'brian',
-                                     'lastname': 'beta'}
-                                    )
-        thisuser = Username.objects.get(firstname='brian')
+        thisuser =Username.objects.create(firstname='brian',
+                                lastname='beta'
+                                )
         first_ghost= available_ghosts(3)[0]
         first_ghostname = first_ghost.name
         self.assertTrue(first_ghost.taken == 'available')
         response = self.client.post('/ghostnames/choose/%s' % thisuser.pk,
                                     {
-                                        'ghost_name': first_ghostname
-                                    }
-                                    )
-        thisuser = Username.objects.get(firstname='brian')
-        print '11', thisuser.ghostname , first_ghostname
-        self.assertTrue(thisuser.ghostname == first_ghostname)
+                                        'ghost_name': first_ghost.name
+                                    })
+        self.assertTrue(Username.objects.get(lastname='beta').ghostname == first_ghostname)
         first_ghost = Ghost.objects.get(name = first_ghostname)
         self.assertTrue(first_ghost.taken == 'taken')
+        self.assertTrue('Confirm Ghost Name' in response.content)
