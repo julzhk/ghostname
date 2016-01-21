@@ -4,6 +4,7 @@ from django.core.urlresolvers import reverse
 
 from ghostnames.forms import UserNameForm, ChooseGhostNameForm
 from ghostnames.models import Username
+from ghostnames.models import Ghost
 
 def list_names(request):
     if request.method == 'POST':
@@ -22,7 +23,16 @@ def list_names(request):
 
 def choose_ghost_name(request, uid=None):
     user = Username.objects.get(id=uid) if uid else None
-    form = ChooseGhostNameForm()
+    if request.method == 'POST':
+        form = ChooseGhostNameForm(request.POST)
+        if form.is_valid():
+            user.ghostname = form.cleaned_data['ghost_name']
+            user.save()
+            ghost = Ghost.objects.get(name = form.cleaned_data['ghost_name'])
+            ghost.taken = 'taken'
+            ghost.save()
+    else:
+        form = ChooseGhostNameForm()
     return render(request, 'ghostnames/choosename.html', {
         'form': form,
         'ghostnames':Username.objects.all(),
