@@ -25,8 +25,11 @@ def list_names(request):
     })
 
 def choose_ghost_name(request, uid=None):
-    user = Username.objects.get(id=uid) if uid else None
-    template_name = 'ghostnames/choosename.html'
+    try:
+        user = Username.objects.get(id=uid)
+    except Username.DoesNotExist:
+        return HttpResponseRedirect('/')
+
     if request.method == 'POST':
         form = ChooseGhostNameForm(request.POST)
         if form.is_valid():
@@ -35,11 +38,12 @@ def choose_ghost_name(request, uid=None):
             ghost = Ghost.objects.get(name = form.cleaned_data['ghost_name'])
             ghost.taken = 'taken'
             ghost.save()
-            template_name = 'ghostnames/confirmname.html'
+            return render(request, 'ghostnames/confirmname.html', {
+                'user':user
+            })
     else:
         form = ChooseGhostNameForm()
-    return render(request, template_name, {
+    return render(request, 'ghostnames/choosename.html', {
         'form': form,
-        'ghostnames':Username.objects.all(),
         'user':user
     })

@@ -29,6 +29,13 @@ class SimpleTestHomePage(TestCase):
         response = self.client.get('/ghostnames/')
         self.assertEqual(response.status_code, 200)
 
+    def test_misconfigured_choose_name_url_resolves_to_home_page_view(self):
+            found = resolve('/ghostnames/choose')
+            self.assertEqual(found.func, list_names)
+            found = resolve('/ghostnames/choose/')
+            self.assertEqual(found.func, list_names)
+
+
 class SimpleSubmitName(TestCase):
 
     def setUp(self):
