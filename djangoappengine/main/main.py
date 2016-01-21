@@ -74,4 +74,6 @@ def make_profileable(func):
 main = make_profileable(real_main)
 
 if __name__ == '__main__':
+    from ghostnames.models import Ghost
+    Ghost.initialize()
     main()
