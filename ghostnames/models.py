@@ -19,7 +19,7 @@ class Ghost(models.Model):
         if Ghost.objects.count() == 0:
             with open(filepath) as f:
                 for ghostname in f:
-                    Ghost.objects.create(name=ghostname,
+                    Ghost.objects.create(name=ghostname.strip(),
                                          taken='available')
 
 

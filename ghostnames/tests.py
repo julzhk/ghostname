@@ -99,6 +99,12 @@ class SimpleTestHomePage(TestCase):
         all_ghosts_count = Ghost.objects.count()
         self.assertTrue(all_ghosts_count == 43)
 
+    def test_initialize_has_no_newlines_in_names(self):
+        Ghost.initialize()
+        all_ghosts = Ghost.objects.all()
+        all_names_with_newline = [g.name for g in all_ghosts if '\n' in g.name]
+        self.assertTrue(len(all_names_with_newline) == 0)
+
     def test_initialize_only_runs_once(self):
         Ghost.initialize()
         Ghost.initialize()
