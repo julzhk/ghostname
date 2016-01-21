@@ -1,7 +1,6 @@
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render, redirect
 from django.core.urlresolvers import reverse
-from django.core.cache import cache
 
 from ghostnames.forms import UserNameForm, ChooseGhostNameForm
 from ghostnames.models import Username
@@ -30,7 +29,7 @@ def choose_ghost_name(request, uid=None):
         user = Username.objects.get(id=uid)
     except Username.DoesNotExist:
         return HttpResponseRedirect('/')
-
+    release_current_ghost_name(user)
     if request.method == 'POST':
         form = ChooseGhostNameForm(request.POST)
         if form.is_valid():
@@ -49,6 +48,18 @@ def choose_ghost_name(request, uid=None):
         'form': form,
         'user':user
     })
+
+def release_current_ghost_name(user):
+    # release current users ghost name
+    try:
+        thisghost = Ghost.objects.get(name=user.ghostname)
+        thisghost.taken = 'available'
+        thisghost.save()
+        user.ghostname = ''
+        user.save()
+    except Ghost.DoesNotExist:
+        pass
+
 
 def confirm_ghost_name(request, uid=None):
     user = Username.objects.get(id=uid)

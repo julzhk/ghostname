@@ -150,3 +150,18 @@ class GhostNameAssignmentTests(TestCase):
         first_ghost = Ghost.objects.get(name = first_ghostname)
         self.assertTrue(first_ghost.taken == 'taken')
         self.assertEqual(response.status_code, 302)
+
+    def test_select_ghost_name_releases_old_name(self):
+        Ghost.initialize()
+        first_ghost= available_ghosts(3)[0]
+        thisuser =Username.objects.create(firstname='brian',
+                                lastname='beta',
+                                ghostname=first_ghost.name
+                                )
+        response = self.client.get('/ghostnames/choose/%s' % thisuser.pk)
+        self.assertNotEqual(
+            Username.objects.get(firstname='brian').ghostname,
+            first_ghost.name)
+        self.assertNotEqual(
+            Ghost.objects.get(name=first_ghost.name).taken,
+            'taken')
