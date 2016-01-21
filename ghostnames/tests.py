@@ -110,3 +110,24 @@ class SimpleTestHomePage(TestCase):
         Ghost.initialize()
         all_ghosts_count = Ghost.objects.count()
         self.assertTrue(all_ghosts_count == 43)
+
+    def test_select_ghost_name_is_saved(self):
+        Ghost.initialize()
+        self.client.post('/ghostnames/',
+                                    {'firstname': 'brian',
+                                     'lastname': 'beta'}
+                                    )
+        thisuser = Username.objects.get(firstname='brian')
+        first_ghost= available_ghosts(3)[0]
+        first_ghostname = first_ghost.name
+        self.assertTrue(first_ghost.taken == 'available')
+        response = self.client.post('/ghostnames/choose/%s' % thisuser.pk,
+                                    {
+                                        'ghost_name': first_ghostname
+                                    }
+                                    )
+        thisuser = Username.objects.get(firstname='brian')
+        print '11', thisuser.ghostname , first_ghostname
+        self.assertTrue(thisuser.ghostname == first_ghostname)
+        first_ghost = Ghost.objects.get(name = first_ghostname)
+        self.assertTrue(first_ghost.taken == 'taken')

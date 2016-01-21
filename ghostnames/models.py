@@ -28,8 +28,10 @@ class Ghost(models.Model):
 class Username(models.Model):
     firstname = models.CharField(max_length=255)
     lastname = models.CharField(max_length=255)
+    ghostname = models.CharField(max_length=255,default='')
     date = models.DateTimeField(auto_now_add=True)
 
     @property
     def given_name(self):
         return u'{} {}'.format(self.firstname, self.lastname)
+

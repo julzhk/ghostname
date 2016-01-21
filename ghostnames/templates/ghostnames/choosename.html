@@ -2,10 +2,10 @@
 {% block content %}
   <h2>Choose your Ghost names</h2>
 {{ user.firstname }}
-  <form action="/ghostnames/" method="post">{% csrf_token %}
+  <form action="." method="post">{% csrf_token %}
       <table>{{ form }}</table>
       {{ user.lastname }}
       <hr>
-      <input type="submit" value="Get Ghostname" />
+      <input type="submit" value="select your ghostname" />
   </form>
 {% endblock %}
