@@ -26,6 +26,7 @@ TEMPLATE_CONTEXT_PROCESSORS = (
 LOGIN_REDIRECT_URL = '/ghostnames/'
 
 ADMIN_MEDIA_PREFIX = '/media/admin/'
+ALLOWED_HOSTS = ['ghost-simple.appspot.com']
 MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'media')
 TEMPLATE_DIRS = (os.path.join(os.path.dirname(__file__), 'templates'),)
 
