@@ -3,7 +3,7 @@ from django.core.urlresolvers import resolve
 from django.core.cache import cache
 from django.http import HttpRequest, HttpResponseRedirect
 from django.core.urlresolvers import reverse
-from ghostnames.views import list_names
+from ghostnames.views import list_names, choose_ghost_name
 from ghostnames.models import Username, Ghost
 from ghostnames.forms import available_ghosts
 
@@ -30,11 +30,27 @@ class SimpleTestHomePage(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_misconfigured_choose_name_url_resolves_to_home_page_view(self):
-            found = resolve('/ghostnames/choose')
-            self.assertEqual(found.func, list_names)
+            found = resolve('/ghostnames/choose/124')
+            self.assertEqual(found.func, choose_ghost_name)
             found = resolve('/ghostnames/choose/')
-            self.assertEqual(found.func, list_names)
+            self.assertEqual(found.func, choose_ghost_name)
 
+    def test_homepage_has_usernames_on_it(self):
+        users = ['andy antman alpha', 'brian beast beta', 'charlie chopper chase']
+        Username.objects.create(firstname='derek',lastname='deamon')
+        for user_fn in users:
+            firstname, ghostname, lastname=user_fn.split(' ')
+            Username.objects.create(firstname=firstname,lastname=lastname, ghostname=ghostname)
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 301)
+        response = self.client.get('/ghostnames/')
+        for user_fn in users:
+            firstname, ghostname, lastname=user_fn.split(' ')
+            self.assertTrue(firstname in response.content)
+            self.assertTrue(lastname in response.content)
+            self.assertTrue(ghostname in response.content)
+        self.assertTrue('derek' not in response.content)
+        self.assertTrue('deamon' not in response.content)
 
 class SimpleSubmitName(TestCase):
 
@@ -65,17 +81,6 @@ class SimpleSubmitName(TestCase):
         self.assertEqual(created_user.firstname, firstname)
         self.assertEqual(created_user.lastname, lastname)
 
-    def test_home_page_saved_POST_request_now_in_context(self):
-        request = HttpRequest()
-        request.method = 'POST'
-        firstname = 'Andy'
-        lastname = 'Alpha'
-        request.POST['firstname'] = firstname
-        request.POST['lastname'] = lastname
-        list_names(request)
-        response = self.client.get('/ghostnames/')
-        self.assertTrue(any(i.given_name == 'Andy Alpha' for i in response.context['ghostnames']))
-
     def test_home_page_saved_POST_now_choose_a_ghost_name(self):
         response = self.client.post('/ghostnames/',
                                     {'firstname': 'brian',
@@ -96,7 +101,7 @@ class GhostNameAssignmentTests(TestCase):
     def test_get_available_ghost_names_when_all_are_available(self):
         ghostnames = ['Betelgeuse','Bhoot','Bloody Mary','Bogle']
         for name in ghostnames:
-            Ghost.objects.create(name=name)
+            Ghost.objects.create(name=name,taken='available')
         next_ghosts = available_ghosts(3)
         next_ghosts_names = [n.name for n in next_ghosts]
         for name in ghostnames[:3]:
@@ -109,7 +114,7 @@ class GhostNameAssignmentTests(TestCase):
             g = Ghost.objects.create(name=name, taken=taken)
         next_ghosts = available_ghosts(3)
         next_ghosts_names = [n.name for n in next_ghosts]
-        for name in ghostnames[:3]:
+        for name in ghostnames[:2]:
             self.assertTrue(name in next_ghosts_names)
 
     def test_initialize(self):
@@ -144,4 +149,4 @@ class GhostNameAssignmentTests(TestCase):
         self.assertTrue(Username.objects.get(lastname='beta').ghostname == first_ghostname)
         first_ghost = Ghost.objects.get(name = first_ghostname)
         self.assertTrue(first_ghost.taken == 'taken')
-        self.assertTrue('Confirm Ghost Name' in response.content)
+        self.assertEqual(response.status_code, 302)

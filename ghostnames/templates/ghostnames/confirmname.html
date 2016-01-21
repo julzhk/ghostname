@@ -3,7 +3,17 @@
 
 {% block content %}
       <h2>Hi there!</h2>
-    {{ user.firstname }}
-    {{ user.ghostname }}
-    {{ user.lastname }}
+    <p>
+    What a cool nickname you now have :
+        {{ user.firstname }}
+        <em>{{ user.ghostname }}</em>
+            {{ user.lastname }}
+    </p>
+
+    <p>
+    Do you want to
+        <a href="{% url 'home'%}">keep it</a>, or
+        <a href="{% url 'choose' user.id %}">change it?</a>
+    </p>
+
 {% endblock %}

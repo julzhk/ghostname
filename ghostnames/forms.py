@@ -9,10 +9,11 @@ class UserNameForm(forms.ModelForm):
         exclude = ['date', 'ghostname']
 
 def available_ghosts(sample=3):
-    return Ghost.objects.all()[:sample]
+    return Ghost.objects.filter(taken='available')[:sample]
 
 class ChooseGhostNameForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super(ChooseGhostNameForm, self).__init__(*args, **kwargs)
         self.fields['ghost_name'] = forms.ChoiceField(
             choices=tuplify_list(available_ghosts()))
+        self.fields['ghost_name'].label = ''

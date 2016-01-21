@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
   <h2>Choose your Ghost name</h2>
-{{ user.firstname }}
   <form action="./{{ user.id }}" method="POST">{% csrf_token %}
-      <table>{{ form }}</table>
+      {{ user.firstname }}
+      {{ form }}
       {{ user.lastname }}
       <hr>
       <input type="submit" value="select your ghostname" />

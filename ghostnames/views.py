@@ -11,7 +11,8 @@ def list_names(request):
     if request.method == 'POST':
         form = UserNameForm(request.POST)
         if form.is_valid():
-            newuser = Username.objects.create(firstname=form.cleaned_data['firstname'],
+            newuser = Username.objects.create(
+                                    firstname=form.cleaned_data['firstname'],
                                     lastname=form.cleaned_data['lastname']
                                     )
             return HttpResponseRedirect(reverse('choose',
@@ -21,7 +22,7 @@ def list_names(request):
         form = UserNameForm()
     return render(request, 'ghostnames/index.html', {
         'form': form,
-        'ghostnames':Username.objects.all()
+        'users':Username.objects.exclude(ghostname='')
     })
 
 def choose_ghost_name(request, uid=None):
@@ -38,12 +39,20 @@ def choose_ghost_name(request, uid=None):
             ghost = Ghost.objects.get(name = form.cleaned_data['ghost_name'])
             ghost.taken = 'taken'
             ghost.save()
-            return render(request, 'ghostnames/confirmname.html', {
-                'user':user
-            })
+            return HttpResponseRedirect(reverse('confirm',
+                                                current_app='ghostnames',
+                                                args=[user.id,]))
+
     else:
         form = ChooseGhostNameForm()
     return render(request, 'ghostnames/choosename.html', {
         'form': form,
         'user':user
     })
+
+def confirm_ghost_name(request, uid=None):
+    user = Username.objects.get(id=uid)
+    return render(request,
+                  'ghostnames/confirmname.html', {
+                      'user': user
+                  })
