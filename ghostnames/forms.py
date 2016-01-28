@@ -14,6 +14,15 @@ def available_ghosts(sample=3):
 class ChooseGhostNameForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super(ChooseGhostNameForm, self).__init__(*args, **kwargs)
-        self.fields['ghost_name'] = forms.ChoiceField(
+        self.fields['nickname'] = forms.ChoiceField(
             choices=tuplify_list(available_ghosts()))
-        self.fields['ghost_name'].label = ''
+        self.fields['nickname'].label = ''
+
+class ChooseNameFormAPI(forms.Form):
+    def __init__(self, *args, **kwargs):
+        super(ChooseNameFormAPI, self).__init__(*args, **kwargs)
+        self.fields['firstname'] = forms.CharField(min_length=2, max_length=20)
+        self.fields['lastname'] = forms.CharField(min_length=2, max_length=20)
+        self.fields['nickname'] = forms.ChoiceField(
+            choices=tuplify_list(available_ghosts()))
+        self.fields['nickname'].label = ''
