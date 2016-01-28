@@ -1,0 +1,84 @@
+<!DOCTYPE html >
+<html ng-app="nicknameapp">
+<head>
+    <title>Choose a nickname</title>
+    <script src="js/angular.min.js"></script>
+    <script>
+
+        var nicknamemodule = angular.module('nicknameapp', []);
+        nicknamemodule.controller('nicknameListController', function ($scope, $http) {
+            $scope.showchooser = false;
+            $scope.submit_label= 'Register';
+            var promise = $http({method: 'GET', url: 'http://127.0.0.1:8080/ghostnames/api/names_api/',data:{}});
+                        promise.success(function(data, status, headers, config, statusText) {
+                            console.log(data);
+                        $scope.names = data;
+            });
+            $scope.register = function () {
+                if($scope.registrationForm.$valid){
+                    if ($scope.showchooser == false){
+                        var promise = $http({method: 'GET', url: 'http://127.0.0.1:8080/ghostnames/suggestioned_names_api/',data:{}});
+                        console.log(promise);
+                        promise.success(function(data, status, headers, config, statusText) {
+                            console.log(data);
+                            $scope.showchooser = true;
+                            $scope.nicknames = data;
+                            $scope.submit_label= 'Select Nickname';
+                        });
+                    } else {
+                            console.log('selected a name');
+                            console.log($scope.person);
+                            $scope.names.push(angular.copy($scope.person));
+                            var promise = $http({
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                url: 'http://127.0.0.1:8080/ghostnames/api/register/',
+                                data: $scope.person});
+                            $scope.person = {};
+                            $scope.showchooser = false;
+
+                    }
+            }
+            }
+        });
+    </script>
+    <link type="text/css" rel="stylesheet" href="/media/main.css" />
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha256-7s5uDGW3AHqw6xtJmNNtr+OBRJUlgkNJEo78P4b0yRw= sha512-nNo+yCHEyn0smMxSswnf/OnX6/KwJuZTlNZBjauKhTK0c+zT+q5JOCx0UFhXQ6rJR9jg6Es8gPuD2uZcYDLqSw==" crossorigin="anonymous">
+
+</head>
+<body ng-controller="nicknameListController" ng-cloak  >
+<div class="panel panel-default">
+  <div class="panel-body">
+      <p>Be astonished and happy for these people who have
+          already got these amazing nicknames. </p>
+  </div>
+  <ul class="list-group">
+      users registered so far: {{ names.length }}
+    <div ng-repeat="user in names">
+        <li class="list-group-item">
+            {{ user.firstname }} <em>{{ user.nickname }}</em> {{ user.lastname }}
+        </li>
+    </div>
+  </ul>
+</div>
+<h2>
+So, why not get a name yourself?
+</h2>
+    <p>Tell us your firstname and last name and we'll get started!</p>
+<div >
+<form name="registrationForm">
+    <label for="firstname">firstname</label>
+    <input type="text" name="firstname" ng-model="person.firstname" ng-readonly="showchooser"/><br>
+    <span ng-show="showchooser">Choose a nickname
+     <select name="nickname" ng-model="person.nickname" ng-options="x.value as x.label for x in nicknames"></select>
+        <br>
+    </span>
+    <label for="lastname">lastname</label>
+    <input type="text" name="lastname" ng-model="person.lastname" ng-readonly="showchooser"/><br>
+    <input type="submit" value="{{ submit_label }}" ng-click="register()" />
+</form>
+</div>
+
+</body>
+</html>
